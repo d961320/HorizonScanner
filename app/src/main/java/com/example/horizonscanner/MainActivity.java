@@ -96,7 +96,7 @@ public class MainActivity extends AppCompatActivity
                     updateCamera();
                     dialog.dismiss();
 
-                    // Tving mappevalg EFTER pegemetode
+                    // Tving mappevalg ved opstart
                     folderPicker.launch(
                             new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
                     );
@@ -126,7 +126,7 @@ public class MainActivity extends AppCompatActivity
 
 // Vis altid valg-dialog ved opstart
         showStartupDialog();
-
+        ;
 
 
         btnStart.setOnClickListener(v -> startScan());
@@ -142,7 +142,7 @@ public class MainActivity extends AppCompatActivity
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         if (item.getItemId() == R.id.menu_settings) {
-            showSettingsDialog();
+            showPointingModeDialog();   // 👈 kun pegemetode
             return true;
         }
         return super.onOptionsItemSelected(item);
@@ -164,6 +164,26 @@ public class MainActivity extends AppCompatActivity
                 })
                 .setPositiveButton(R.string.menu_settings, (d, w) ->
                         folderPicker.launch(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)))
+                .show();
+    }
+
+    private void showPointingModeDialog() {
+        String[] options = {
+                getString(R.string.point_phone),
+                getString(R.string.point_camera)
+        };
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.pointing_mode)
+                .setSingleChoiceItems(options, pointingMode, (dialog, which) -> {
+                    pointingMode = which;
+                })
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    savePrefs();
+                    updateCamera();
+                    dialog.dismiss();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
 
