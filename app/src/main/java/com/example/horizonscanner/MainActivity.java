@@ -21,6 +21,7 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
@@ -109,6 +110,9 @@ public class MainActivity extends AppCompatActivity
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        Toolbar toolbar = findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
+
         statusText = findViewById(R.id.statusText);
         liveAngleText = findViewById(R.id.liveAngleText);
         folderText = findViewById(R.id.folderText);
@@ -126,7 +130,6 @@ public class MainActivity extends AppCompatActivity
 
 // Vis altid valg-dialog ved opstart
         showStartupDialog();
-        ;
 
 
         btnStart.setOnClickListener(v -> startScan());
@@ -142,12 +145,11 @@ public class MainActivity extends AppCompatActivity
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         if (item.getItemId() == R.id.menu_settings) {
-            showPointingModeDialog();   // 👈 kun pegemetode
+            showPointingModeDialog();
             return true;
         }
         return super.onOptionsItemSelected(item);
     }
-
     private void showSettingsDialog() {
         String[] options = {
                 getString(R.string.point_phone),
