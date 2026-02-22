@@ -1,7 +1,9 @@
 package com.example.horizonscanner;
 
+import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -16,12 +18,14 @@ import android.widget.TextView;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
+import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.documentfile.provider.DocumentFile;
 
@@ -33,6 +37,8 @@ import java.util.TreeMap;
 
 public class MainActivity extends AppCompatActivity
         implements SensorEventListener {
+
+    private static final int REQ_CAMERA = 1001;
 
     private static final String PREFS = "prefs";
     private static final String PREF_FOLDER = "folder";
@@ -97,8 +103,6 @@ public class MainActivity extends AppCompatActivity
         btnStop.setOnClickListener(v -> stopScan());
     }
 
-    // ---------- MENU ----------
-
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.menu_main, menu);
@@ -132,8 +136,6 @@ public class MainActivity extends AppCompatActivity
                         folderPicker.launch(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)))
                 .show();
     }
-
-    // ---------- SCAN ----------
 
     private void startScan() {
         if (folderUri == null || rotationSensor == null) {
@@ -192,8 +194,6 @@ public class MainActivity extends AppCompatActivity
         lastAzimuth = azimuth;
     }
 
-    // ---------- SAVE ----------
-
     private void saveCsv() {
         try {
             DocumentFile folder = DocumentFile.fromTreeUri(this, folderUri);
@@ -216,18 +216,45 @@ public class MainActivity extends AppCompatActivity
             statusText.setText(getString(R.string.status_done, name));
 
         } catch (Exception e) {
-            statusText.setText(R.string.status_error);
+            statusText.setText("Fejl ved gemning");
         }
     }
-
-    // ---------- CAMERA ----------
 
     private void updateCamera() {
         if (pointingMode == MODE_CAMERA) {
             cameraPreview.setVisibility(View.VISIBLE);
-            startCamera();
+            ensureCameraPermission();
         } else {
             cameraPreview.setVisibility(View.GONE);
+        }
+    }
+
+    private void ensureCameraPermission() {
+        if (ContextCompat.checkSelfPermission(
+                this, Manifest.permission.CAMERA)
+                != PackageManager.PERMISSION_GRANTED) {
+
+            ActivityCompat.requestPermissions(
+                    this,
+                    new String[]{Manifest.permission.CAMERA},
+                    REQ_CAMERA
+            );
+        } else {
+            startCamera();
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(
+            int requestCode,
+            @NonNull String[] permissions,
+            @NonNull int[] grantResults) {
+
+        if (requestCode == REQ_CAMERA &&
+                grantResults.length > 0 &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+
+            startCamera();
         }
     }
 
@@ -252,8 +279,6 @@ public class MainActivity extends AppCompatActivity
             } catch (Exception ignored) {}
         }, ContextCompat.getMainExecutor(this));
     }
-
-    // ---------- PREFS ----------
 
     private void savePrefs() {
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
