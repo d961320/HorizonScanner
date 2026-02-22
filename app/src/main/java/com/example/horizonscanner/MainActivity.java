@@ -53,6 +53,7 @@ public class MainActivity extends AppCompatActivity
     private boolean recording = false;
     private float lastAzimuth = -1;
 
+
     private final TreeMap<Integer, Integer> data = new TreeMap<>();
 
     private TextView statusText, liveAngleText, folderText;
@@ -78,6 +79,31 @@ public class MainActivity extends AppCompatActivity
                         }
                     });
 
+    private void showStartupDialog() {
+        String[] options = {
+                getString(R.string.point_phone),
+                getString(R.string.point_camera)
+        };
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.pointing_mode)
+                .setCancelable(false)
+                .setSingleChoiceItems(options, pointingMode, (dialog, which) -> {
+                    pointingMode = which;
+                })
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    savePrefs();
+                    updateCamera();
+                    dialog.dismiss();
+
+                    // Tving mappevalg EFTER pegemetode
+                    folderPicker.launch(
+                            new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                    );
+                })
+                .show();
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -94,10 +120,14 @@ public class MainActivity extends AppCompatActivity
         rotationSensor = sensorManager != null
                 ? sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
                 : null;
-
         loadPrefs();
         updateFolderText();
         updateCamera();
+
+// Vis altid valg-dialog ved opstart
+        showStartupDialog();
+
+
 
         btnStart.setOnClickListener(v -> startScan());
         btnStop.setOnClickListener(v -> stopScan());
@@ -138,8 +168,14 @@ public class MainActivity extends AppCompatActivity
     }
 
     private void startScan() {
-        if (folderUri == null || rotationSensor == null) {
+        if (folderUri == null) {
             statusText.setText(R.string.status_no_folder);
+            showStartupDialog();
+            return;
+        }
+
+        if (rotationSensor == null) {
+            statusText.setText("Sensor ikke tilgængelig");
             return;
         }
 
@@ -184,7 +220,15 @@ public class MainActivity extends AppCompatActivity
         float azimuth = (float) Math.toDegrees(O[0]);
         if (azimuth < 0) azimuth += 360;
 
-        int elevation = Math.round(-(float) Math.toDegrees(O[1]));
+        float pitchDeg = (float) Math.toDegrees(O[1]);
+
+        int elevation;
+        if (pointingMode == MODE_CAMERA) {
+            elevation = Math.round(90f - Math.abs(pitchDeg));
+        } else {
+            elevation = Math.round(-pitchDeg);
+        }
+
         liveAngleText.setText(elevation + "°");
 
         int az = Math.round(azimuth);
@@ -230,8 +274,7 @@ public class MainActivity extends AppCompatActivity
     }
 
     private void ensureCameraPermission() {
-        if (ContextCompat.checkSelfPermission(
-                this, Manifest.permission.CAMERA)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 != PackageManager.PERMISSION_GRANTED) {
 
             ActivityCompat.requestPermissions(
@@ -283,8 +326,10 @@ public class MainActivity extends AppCompatActivity
     private void savePrefs() {
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
         SharedPreferences.Editor e = p.edit();
-        if (folderUri != null) e.putString(PREF_FOLDER, folderUri.toString());
         e.putInt(PREF_MODE, pointingMode);
+        if (folderUri != null) {
+            e.putString(PREF_FOLDER, folderUri.toString());
+        }
         e.apply();
     }
 
@@ -293,6 +338,7 @@ public class MainActivity extends AppCompatActivity
         String u = p.getString(PREF_FOLDER, null);
         folderUri = u != null ? Uri.parse(u) : null;
         pointingMode = p.getInt(PREF_MODE, MODE_PHONE);
+
     }
 
     private void updateFolderText() {
