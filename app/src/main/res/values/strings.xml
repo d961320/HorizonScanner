@@ -1,24 +1,21 @@
 <resources>
-
-    <string name="app_name">HorizonScanner</string>
-
-    <string name="status_idle">Tryk Start og drej 360°</string>
-    <string name="status_scanning">Scanner…</string>
-    <string name="status_done">Færdig: %1$s</string>
-    <string name="status_stopped">Måling stoppet</string>
-    <string name="status_no_folder">Vælg mappe i Indstillinger</string>
-
-    <string name="button_start">Start</string>
-    <string name="button_stop">Stop</string>
-
-    <string name="folder_not_set">Ingen mappe valgt</string>
-
+    <string name="app_name">Horisontmåler</string>
     <string name="menu_settings">Indstillinger</string>
-
     <string name="pointing_mode">Pegemetode</string>
-    <string name="point_phone">Telefon (sensor)</string>
-    <string name="point_camera">Kamera (sigte)</string>
+    <string name="point_phone">Peg med telefon</string>
+    <string name="point_camera">Brug kamera</string>
 
-    <string name="csv_header">Azimuth Elevation</string>
+    <string name="start">Start</string>
+    <string name="stop">Stop</string>
+    <string name="no_folder">Ingen mappe valgt</string>
 
+    <string name="status_scanning">Måler...</string>
+    <string name="status_done">Færdig</string>
+
+    <string name="file_saved">Fil gemt</string>
+    <string name="file_saved_actions">Hvad vil du gøre?</string>
+    <string name="view_file">Se fil</string>
+    <string name="share_file">Del fil</string>
+
+    <string name="angle_format">Azimuth: %1$d°, Elevation: %2$d°</string>
 </resources>

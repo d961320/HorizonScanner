@@ -1,109 +1,55 @@
 package com.example.horizonscanner;
 
-import android.Manifest;
-import android.content.Intent;
-import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
-import android.hardware.Sensor;
-import android.hardware.SensorEvent;
-import android.hardware.SensorEventListener;
-import android.hardware.SensorManager;
+import android.content.*;
+import android.hardware.*;
 import android.net.Uri;
 import android.os.Bundle;
-import android.view.Menu;
-import android.view.MenuItem;
-import android.view.View;
-import android.widget.Button;
-import android.widget.TextView;
-
-import androidx.activity.result.ActivityResultLauncher;
+import android.view.*;
+import android.widget.*;
+import androidx.activity.result.*;
 import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.annotation.NonNull;
-import androidx.appcompat.app.AlertDialog;
-import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.app.*;
 import androidx.appcompat.widget.Toolbar;
-import androidx.camera.core.CameraSelector;
-import androidx.camera.core.Preview;
-import androidx.camera.lifecycle.ProcessCameraProvider;
-import androidx.camera.view.PreviewView;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
 import androidx.documentfile.provider.DocumentFile;
 
-import com.google.common.util.concurrent.ListenableFuture;
-
 import java.io.OutputStream;
-import java.util.Locale;
-import java.util.TreeMap;
+import java.util.*;
 
-public class MainActivity extends AppCompatActivity
-        implements SensorEventListener {
-
-    private static final int REQ_CAMERA = 1001;
-
-    private static final String PREFS = "prefs";
-    private static final String PREF_FOLDER = "folder";
-    private static final String PREF_MODE = "mode";
+public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
     private static final int MODE_PHONE = 0;
     private static final int MODE_CAMERA = 1;
+    private static final String PREFS = "prefs";
+    private static final String PREF_MODE = "mode";
+    private static final String PREF_FOLDER = "folder";
 
     private SensorManager sensorManager;
     private Sensor rotationSensor;
 
-    private boolean recording = false;
-    private float lastAzimuth = -1;
-
-
-    private final TreeMap<Integer, Integer> data = new TreeMap<>();
-
-    private TextView statusText, liveAngleText, folderText;
+    private TextView txtAngle, txtFolder, statusText;
     private Button btnStart, btnStop;
-    private PreviewView cameraPreview;
 
-    private Uri folderUri;
     private int pointingMode = MODE_PHONE;
+    private Uri folderUri;
+    private Uri lastSavedFileUri;
 
-    private final ActivityResultLauncher<Intent> folderPicker =
-            registerForActivityResult(
-                    new ActivityResultContracts.StartActivityForResult(),
-                    result -> {
-                        if (result.getResultCode() == RESULT_OK && result.getData() != null) {
-                            folderUri = result.getData().getData();
-                            getContentResolver().takePersistableUriPermission(
-                                    folderUri,
-                                    Intent.FLAG_GRANT_READ_URI_PERMISSION |
-                                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                            );
-                            savePrefs();
-                            updateFolderText();
-                        }
-                    });
+    private boolean recording = false;
+    private int lastAzimuth = -1;
 
-    private void showStartupDialog() {
-        String[] options = {
-                getString(R.string.point_phone),
-                getString(R.string.point_camera)
-        };
+    private final List<String> data = new ArrayList<>();
 
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.pointing_mode)
-                .setCancelable(false)
-                .setSingleChoiceItems(options, pointingMode, (dialog, which) -> {
-                    pointingMode = which;
-                })
-                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
-                    savePrefs();
-                    updateCamera();
-                    dialog.dismiss();
-
-                    // Tving mappevalg ved opstart
-                    folderPicker.launch(
-                            new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+    private ActivityResultLauncher<Intent> folderPicker =
+            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), r -> {
+                if (r.getResultCode() == RESULT_OK && r.getData() != null) {
+                    folderUri = r.getData().getData();
+                    getContentResolver().takePersistableUriPermission(
+                            folderUri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                     );
-                })
-                .show();
-    }
+                    savePrefs();
+                    updateFolderText();
+                }
+            });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -113,32 +59,28 @@ public class MainActivity extends AppCompatActivity
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
 
-        statusText = findViewById(R.id.statusText);
-        liveAngleText = findViewById(R.id.liveAngleText);
-        folderText = findViewById(R.id.folderText);
+        txtAngle = findViewById(R.id.txtAngle);
+        txtFolder = findViewById(R.id.txtFolder);
+        statusText = findViewById(R.id.txtStatus);
         btnStart = findViewById(R.id.btnStart);
         btnStop = findViewById(R.id.btnStop);
-        cameraPreview = findViewById(R.id.cameraPreview);
 
         sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
-        rotationSensor = sensorManager != null
-                ? sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-                : null;
+        rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+
         loadPrefs();
         updateFolderText();
-        updateCamera();
-
-// Vis altid valg-dialog ved opstart
         showStartupDialog();
-
 
         btnStart.setOnClickListener(v -> startScan());
         btnStop.setOnClickListener(v -> stopScan());
     }
 
+    /* ---------- MENU ---------- */
+
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        getMenuInflater().inflate(R.menu.menu_main, menu);
+        getMenuInflater().inflate(R.menu.main_menu, menu);
         return true;
     }
 
@@ -150,7 +92,10 @@ public class MainActivity extends AppCompatActivity
         }
         return super.onOptionsItemSelected(item);
     }
-    private void showSettingsDialog() {
+
+    /* ---------- DIALOGER ---------- */
+
+    private void showStartupDialog() {
         String[] options = {
                 getString(R.string.point_phone),
                 getString(R.string.point_camera)
@@ -158,14 +103,12 @@ public class MainActivity extends AppCompatActivity
 
         new AlertDialog.Builder(this)
                 .setTitle(R.string.pointing_mode)
-                .setSingleChoiceItems(options, pointingMode, (d, which) -> {
-                    pointingMode = which;
+                .setCancelable(false)
+                .setSingleChoiceItems(options, pointingMode, (d, w) -> pointingMode = w)
+                .setPositiveButton(android.R.string.ok, (d, w) -> {
                     savePrefs();
-                    updateCamera();
-                    d.dismiss();
+                    folderPicker.launch(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE));
                 })
-                .setPositiveButton(R.string.menu_settings, (d, w) ->
-                        folderPicker.launch(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)))
                 .show();
     }
 
@@ -177,27 +120,55 @@ public class MainActivity extends AppCompatActivity
 
         new AlertDialog.Builder(this)
                 .setTitle(R.string.pointing_mode)
-                .setSingleChoiceItems(options, pointingMode, (dialog, which) -> {
-                    pointingMode = which;
-                })
-                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
-                    savePrefs();
-                    updateCamera();
-                    dialog.dismiss();
-                })
+                .setSingleChoiceItems(options, pointingMode, (d, w) -> pointingMode = w)
+                .setPositiveButton(android.R.string.ok, (d, w) -> savePrefs())
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
 
+    private void showFileActionsDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.file_saved)
+                .setMessage(R.string.file_saved_actions)
+                .setPositiveButton(R.string.view_file, (d, w) -> openFile())
+                .setNeutralButton(R.string.share_file, (d, w) -> shareFile())
+                .setNegativeButton(android.R.string.ok, null)
+                .show();
+    }
+
+    /* ---------- SENSOR ---------- */
+
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        if (!recording) return;
+
+        float[] rotationMatrix = new float[9];
+        float[] O = new float[3];
+        SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values);
+        SensorManager.getOrientation(rotationMatrix, O);
+
+        int azimuth = (int) Math.toDegrees(O[0]);
+        float pitchDeg = (float) Math.toDegrees(O[1]);
+
+        int elevation = (pointingMode == MODE_CAMERA)
+                ? Math.round(90f - Math.abs(pitchDeg))
+                : Math.round(-pitchDeg);
+
+        txtAngle.setText(getString(R.string.angle_format, azimuth, elevation));
+
+        if (azimuth != lastAzimuth) {
+            data.add(azimuth + " " + elevation);
+            lastAzimuth = azimuth;
+        }
+    }
+
+    @Override public void onAccuracyChanged(Sensor s, int a) {}
+
+    /* ---------- SCAN ---------- */
+
     private void startScan() {
         if (folderUri == null) {
-            statusText.setText(R.string.status_no_folder);
             showStartupDialog();
-            return;
-        }
-
-        if (rotationSensor == null) {
-            statusText.setText("Sensor ikke tilgængelig");
             return;
         }
 
@@ -209,166 +180,81 @@ public class MainActivity extends AppCompatActivity
         btnStop.setVisibility(View.VISIBLE);
 
         statusText.setText(R.string.status_scanning);
-
-        sensorManager.registerListener(
-                this,
-                rotationSensor,
-                SensorManager.SENSOR_DELAY_UI
-        );
+        sensorManager.registerListener(this, rotationSensor, SensorManager.SENSOR_DELAY_UI);
     }
 
     private void stopScan() {
         recording = false;
         sensorManager.unregisterListener(this);
 
-        btnStop.setVisibility(View.GONE);
         btnStart.setVisibility(View.VISIBLE);
+        btnStop.setVisibility(View.GONE);
 
-        statusText.setText(R.string.status_stopped);
-
-        if (!data.isEmpty()) saveCsv();
+        saveFile();
+        statusText.setText(R.string.status_done);
     }
 
-    @Override
-    public void onSensorChanged(SensorEvent event) {
-        if (!recording) return;
+    /* ---------- FIL ---------- */
 
-        float[] R = new float[9];
-        float[] O = new float[3];
-
-        SensorManager.getRotationMatrixFromVector(R, event.values);
-        SensorManager.getOrientation(R, O);
-
-        float azimuth = (float) Math.toDegrees(O[0]);
-        if (azimuth < 0) azimuth += 360;
-
-        float pitchDeg = (float) Math.toDegrees(O[1]);
-
-        int elevation;
-        if (pointingMode == MODE_CAMERA) {
-            elevation = Math.round(90f - Math.abs(pitchDeg));
-        } else {
-            elevation = Math.round(-pitchDeg);
-        }
-
-        liveAngleText.setText(elevation + "°");
-
-        int az = Math.round(azimuth);
-        if (!data.containsKey(az)) data.put(az, elevation);
-
-        if (lastAzimuth > 300 && azimuth < 60) stopScan();
-        lastAzimuth = azimuth;
-    }
-
-    private void saveCsv() {
+    private void saveFile() {
         try {
             DocumentFile folder = DocumentFile.fromTreeUri(this, folderUri);
+            if (folder == null) return;
+
             String name = "horizon_" + System.currentTimeMillis() + ".txt";
             DocumentFile file = folder.createFile("text/plain", name);
+            if (file == null) return;
 
-            OutputStream out = getContentResolver().openOutputStream(file.getUri());
-            out.write((getString(R.string.csv_header) + "\n").getBytes());
+            lastSavedFileUri = file.getUri();
 
-            for (Integer az : data.keySet()) {
-                out.write(String.format(
-                        Locale.US,
-                        "%d %d\n",
-                        az,
-                        data.get(az)
-                ).getBytes());
+            try (OutputStream os = getContentResolver().openOutputStream(file.getUri())) {
+                for (String line : data) {
+                    os.write((line + "\n").getBytes());
+                }
             }
 
-            out.close();
-            statusText.setText(getString(R.string.status_done, name));
+            showFileActionsDialog();
 
         } catch (Exception e) {
-            statusText.setText("Fejl ved gemning");
+            e.printStackTrace();
         }
     }
 
-    private void updateCamera() {
-        if (pointingMode == MODE_CAMERA) {
-            cameraPreview.setVisibility(View.VISIBLE);
-            ensureCameraPermission();
-        } else {
-            cameraPreview.setVisibility(View.GONE);
-        }
+    private void openFile() {
+        Intent i = new Intent(Intent.ACTION_VIEW);
+        i.setDataAndType(lastSavedFileUri, "text/plain");
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivity(i);
     }
 
-    private void ensureCameraPermission() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-                != PackageManager.PERMISSION_GRANTED) {
-
-            ActivityCompat.requestPermissions(
-                    this,
-                    new String[]{Manifest.permission.CAMERA},
-                    REQ_CAMERA
-            );
-        } else {
-            startCamera();
-        }
+    private void shareFile() {
+        Intent i = new Intent(Intent.ACTION_SEND);
+        i.setType("text/plain");
+        i.putExtra(Intent.EXTRA_STREAM, lastSavedFileUri);
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivity(Intent.createChooser(i, getString(R.string.share_file)));
     }
 
-    @Override
-    public void onRequestPermissionsResult(
-            int requestCode,
-            @NonNull String[] permissions,
-            @NonNull int[] grantResults) {
-
-        if (requestCode == REQ_CAMERA &&
-                grantResults.length > 0 &&
-                grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-
-            startCamera();
-        }
-    }
-
-    private void startCamera() {
-        ListenableFuture<ProcessCameraProvider> future =
-                ProcessCameraProvider.getInstance(this);
-
-        future.addListener(() -> {
-            try {
-                ProcessCameraProvider provider = future.get();
-                provider.unbindAll();
-
-                Preview preview = new Preview.Builder().build();
-                preview.setSurfaceProvider(cameraPreview.getSurfaceProvider());
-
-                provider.bindToLifecycle(
-                        this,
-                        CameraSelector.DEFAULT_BACK_CAMERA,
-                        preview
-                );
-
-            } catch (Exception ignored) {}
-        }, ContextCompat.getMainExecutor(this));
-    }
+    /* ---------- PREFS ---------- */
 
     private void savePrefs() {
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
         SharedPreferences.Editor e = p.edit();
         e.putInt(PREF_MODE, pointingMode);
-        if (folderUri != null) {
-            e.putString(PREF_FOLDER, folderUri.toString());
-        }
+        if (folderUri != null) e.putString(PREF_FOLDER, folderUri.toString());
         e.apply();
     }
 
     private void loadPrefs() {
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
-        String u = p.getString(PREF_FOLDER, null);
-        folderUri = u != null ? Uri.parse(u) : null;
         pointingMode = p.getInt(PREF_MODE, MODE_PHONE);
-
+        String u = p.getString(PREF_FOLDER, null);
+        if (u != null) folderUri = Uri.parse(u);
     }
 
     private void updateFolderText() {
-        folderText.setText(folderUri == null
-                ? getString(R.string.folder_not_set)
-                : folderUri.getPath());
+        txtFolder.setText(folderUri == null
+                ? getString(R.string.no_folder)
+                : folderUri.toString());
     }
-
-    @Override
-    public void onAccuracyChanged(Sensor sensor, int accuracy) {}
 }
