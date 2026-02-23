@@ -1,6 +1,8 @@
 package com.example.horizonscanner;
 
+import android.Manifest;
 import android.content.*;
+import android.content.pm.PackageManager;
 import android.hardware.*;
 import android.net.Uri;
 import android.os.Bundle;
@@ -8,12 +10,21 @@ import android.view.*;
 import android.widget.*;
 import androidx.activity.result.*;
 import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.*;
 import androidx.appcompat.widget.Toolbar;
+import androidx.camera.core.CameraSelector;
+import androidx.camera.core.Preview;
+import androidx.camera.lifecycle.ProcessCameraProvider;
+import androidx.camera.view.PreviewView;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.documentfile.provider.DocumentFile;
+import com.google.common.util.concurrent.ListenableFuture;
 
 import java.io.OutputStream;
 import java.util.*;
+import java.util.concurrent.ExecutionException;
 
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
@@ -22,12 +33,18 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private static final String PREFS = "prefs";
     private static final String PREF_MODE = "mode";
     private static final String PREF_FOLDER = "folder";
+    private static final int REQUEST_CODE_PERMISSIONS = 10;
+    private static final String[] REQUIRED_PERMISSIONS = new String[]{Manifest.permission.CAMERA};
 
     private SensorManager sensorManager;
     private Sensor rotationSensor;
 
     private TextView txtAngle, txtFolder, statusText;
     private Button btnStart, btnStop;
+    private PreviewView previewView;
+    private ImageView crosshair;
+
+    private ListenableFuture<ProcessCameraProvider> cameraProviderFuture;
 
     private int pointingMode = MODE_PHONE;
     private Uri folderUri;
@@ -64,6 +81,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         statusText = findViewById(R.id.txtStatus);
         btnStart = findViewById(R.id.btnStart);
         btnStop = findViewById(R.id.btnStop);
+        previewView = findViewById(R.id.preview_view);
+        crosshair = findViewById(R.id.crosshair);
 
         sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
         rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
@@ -71,6 +90,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         loadPrefs();
         updateFolderText();
         showStartupDialog();
+
+        if (allPermissionsGranted()) {
+            startCamera();
+        } else {
+            ActivityCompat.requestPermissions(
+                    this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS);
+        }
 
         btnStart.setOnClickListener(v -> startScan());
         btnStop.setOnClickListener(v -> stopScan());
@@ -104,7 +130,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         new AlertDialog.Builder(this)
                 .setTitle(R.string.pointing_mode)
                 .setCancelable(false)
-                .setSingleChoiceItems(options, pointingMode, (d, w) -> pointingMode = w)
+                .setSingleChoiceItems(options, pointingMode, (d, w) -> {
+                    pointingMode = w;
+                    updateCameraVisibility();
+                })
                 .setPositiveButton(android.R.string.ok, (d, w) -> {
                     savePrefs();
                     folderPicker.launch(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE));
@@ -120,7 +149,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         new AlertDialog.Builder(this)
                 .setTitle(R.string.pointing_mode)
-                .setSingleChoiceItems(options, pointingMode, (d, w) -> pointingMode = w)
+                .setSingleChoiceItems(options, pointingMode, (d, w) -> {
+                    pointingMode = w;
+                    updateCameraVisibility();
+                })
                 .setPositiveButton(android.R.string.ok, (d, w) -> savePrefs())
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
@@ -147,7 +179,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values);
         SensorManager.getOrientation(rotationMatrix, O);
 
-        int azimuth = (int) Math.toDegrees(O[0]);
+        int azimuth = (int) (Math.toDegrees(O[0]) + 360) % 360;
         float pitchDeg = (float) Math.toDegrees(O[1]);
 
         int elevation = (pointingMode == MODE_CAMERA)
@@ -250,11 +282,72 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         pointingMode = p.getInt(PREF_MODE, MODE_PHONE);
         String u = p.getString(PREF_FOLDER, null);
         if (u != null) folderUri = Uri.parse(u);
+        updateCameraVisibility();
     }
 
     private void updateFolderText() {
         txtFolder.setText(folderUri == null
                 ? getString(R.string.no_folder)
                 : folderUri.toString());
+    }
+
+    /* ---------- CAMERA ---------- */
+
+    private void updateCameraVisibility() {
+        int visibility = pointingMode == MODE_CAMERA ? View.VISIBLE : View.GONE;
+        previewView.setVisibility(visibility);
+        crosshair.setVisibility(visibility);
+    }
+
+    private void startCamera() {
+        cameraProviderFuture = ProcessCameraProvider.getInstance(this);
+        cameraProviderFuture.addListener(() -> {
+            try {
+                ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
+                bindPreview(cameraProvider);
+            } catch (ExecutionException | InterruptedException e) {
+                // No errors need to be handled for this Future.
+                // This should never be reached.
+            }
+        }, ContextCompat.getMainExecutor(this));
+    }
+
+    void bindPreview(@NonNull ProcessCameraProvider cameraProvider) {
+        Preview preview = new Preview.Builder()
+                .build();
+
+        CameraSelector cameraSelector = new CameraSelector.Builder()
+                .requireLensFacing(CameraSelector.LENS_FACING_BACK)
+                .build();
+
+        preview.setSurfaceProvider(previewView.getSurfaceProvider());
+
+        cameraProvider.bindToLifecycle(this, cameraSelector, preview);
+    }
+
+    private boolean allPermissionsGranted() {
+        for (String permission : REQUIRED_PERMISSIONS) {
+            if (ContextCompat.checkSelfPermission(
+                    this, permission) != PackageManager.PERMISSION_GRANTED) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(
+            int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_CODE_PERMISSIONS) {
+            if (allPermissionsGranted()) {
+                startCamera();
+            } else {
+                Toast.makeText(this, 
+                        "Permissions not granted by the user.",
+                        Toast.LENGTH_SHORT).show();
+                finish();
+            }
+        }
     }
 }

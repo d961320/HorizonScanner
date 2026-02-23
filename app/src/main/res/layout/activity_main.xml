@@ -12,6 +12,27 @@
         android:title="@string/app_name"
         android:titleTextColor="@android:color/white"/>
 
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.camera.view.PreviewView
+            android:id="@+id/preview_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <ImageView
+            android:id="@+id/crosshair"
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            android:layout_gravity="center"
+            android:src="@drawable/crosshair"
+            android:visibility="gone" />
+
+    </FrameLayout>
+
     <TextView
         android:id="@+id/txtAngle"
         android:layout_width="match_parent"
