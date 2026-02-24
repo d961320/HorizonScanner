@@ -33,8 +33,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private static final String PREFS = "prefs";
     private static final String PREF_MODE = "mode";
     private static final String PREF_FOLDER = "folder";
+    private static final String PREF_CALIBRATION = "calibration";
     private static final int REQUEST_CODE_PERMISSIONS = 10;
     private static final String[] REQUIRED_PERMISSIONS = new String[]{Manifest.permission.CAMERA};
+    private static final float SMOOTHING_FACTOR = 0.05f;
 
     private SensorManager sensorManager;
     private Sensor rotationSensor;
@@ -49,11 +51,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private int pointingMode = MODE_PHONE;
     private Uri folderUri;
     private Uri lastSavedFileUri;
+    private int calibration = 0;
 
     private boolean recording = false;
     private int lastAzimuth = -1;
 
     private final List<String> data = new ArrayList<>();
+    private final float[] smoothedRotationMatrix = new float[9];
 
     private ActivityResultLauncher<Intent> folderPicker =
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), r -> {
@@ -116,6 +120,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             showPointingModeDialog();
             return true;
         }
+        if (item.getItemId() == R.id.menu_calibrate) {
+            calibrate();
+            return true;
+        }
         return super.onOptionsItemSelected(item);
     }
 
@@ -175,11 +183,17 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         if (!recording) return;
 
         float[] rotationMatrix = new float[9];
-        float[] O = new float[3];
         SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values);
-        SensorManager.getOrientation(rotationMatrix, O);
 
-        int azimuth = (int) (Math.toDegrees(O[0]) + 360) % 360;
+        // Low-pass filter to smooth the rotation matrix
+        for (int i = 0; i < 9; i++) {
+            smoothedRotationMatrix[i] = rotationMatrix[i] * SMOOTHING_FACTOR + smoothedRotationMatrix[i] * (1.0f - SMOOTHING_FACTOR);
+        }
+
+        float[] O = new float[3];
+        SensorManager.getOrientation(smoothedRotationMatrix, O);
+
+        int azimuth = (int) (Math.toDegrees(O[0]) + 360 - calibration) % 360;
         float pitchDeg = (float) Math.toDegrees(O[1]);
 
         int elevation = (pointingMode == MODE_CAMERA)
@@ -273,6 +287,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
         SharedPreferences.Editor e = p.edit();
         e.putInt(PREF_MODE, pointingMode);
+        e.putInt(PREF_CALIBRATION, calibration);
         if (folderUri != null) e.putString(PREF_FOLDER, folderUri.toString());
         e.apply();
     }
@@ -280,6 +295,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private void loadPrefs() {
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
         pointingMode = p.getInt(PREF_MODE, MODE_PHONE);
+        calibration = p.getInt(PREF_CALIBRATION, 0);
         String u = p.getString(PREF_FOLDER, null);
         if (u != null) folderUri = Uri.parse(u);
         updateCameraVisibility();
@@ -349,5 +365,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 finish();
             }
         }
+    }
+
+    private void calibrate() {
+        float[] O = new float[3];
+        SensorManager.getOrientation(smoothedRotationMatrix, O);
+        calibration = (int) Math.toDegrees(O[0]);
+        savePrefs();
+        Toast.makeText(this, R.string.calibrated, Toast.LENGTH_SHORT).show();
     }
 }
