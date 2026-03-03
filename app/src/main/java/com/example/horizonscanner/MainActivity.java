@@ -39,7 +39,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private static final float SMOOTHING_FACTOR = 0.05f;
 
     private SensorManager sensorManager;
-    private Sensor rotationSensor;
+    private Sensor rotationSensor, accelerometer, magnetometer;
 
     private TextView txtAngle, txtFolder, statusText;
     private Button btnStart, btnStop;
@@ -58,6 +58,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     private final List<String> data = new ArrayList<>();
     private final float[] smoothedRotationMatrix = new float[9];
+
+    private float[] accelerometerReading = new float[3];
+    private float[] magnetometerReading = new float[3];
+    private float[] rotationMatrix = new float[9];
+    private float[] orientationAngles = new float[3];
 
     private ActivityResultLauncher<Intent> folderPicker =
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), r -> {
@@ -90,6 +95,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
         rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
 
         loadPrefs();
         updateFolderText();
@@ -182,29 +189,44 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     public void onSensorChanged(SensorEvent event) {
         if (!recording) return;
 
-        float[] rotationMatrix = new float[9];
-        SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values);
-
-        // Low-pass filter to smooth the rotation matrix
-        for (int i = 0; i < 9; i++) {
-            smoothedRotationMatrix[i] = rotationMatrix[i] * SMOOTHING_FACTOR + smoothedRotationMatrix[i] * (1.0f - SMOOTHING_FACTOR);
+        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+            System.arraycopy(event.values, 0, accelerometerReading, 0, accelerometerReading.length);
+        } else if (event.sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) {
+            System.arraycopy(event.values, 0, magnetometerReading, 0, magnetometerReading.length);
         }
 
-        float[] O = new float[3];
-        SensorManager.getOrientation(smoothedRotationMatrix, O);
+        updateOrientationAngles();
+    }
 
-        int azimuth = (int) (Math.toDegrees(O[0]) + 360 - calibration) % 360;
-        float pitchDeg = (float) Math.toDegrees(O[1]);
+    private void updateOrientationAngles() {
+        if (SensorManager.getRotationMatrix(rotationMatrix, null, accelerometerReading, magnetometerReading)) {
+            // Low-pass filter to smooth the rotation matrix
+            for (int i = 0; i < 9; i++) {
+                smoothedRotationMatrix[i] = rotationMatrix[i] * SMOOTHING_FACTOR + smoothedRotationMatrix[i] * (1.0f - SMOOTHING_FACTOR);
+            }
 
-        int elevation = (pointingMode == MODE_CAMERA)
-                ? Math.round(90f - Math.abs(pitchDeg))
-                : Math.round(-pitchDeg);
+            float[] outMatrix = new float[9];
+            // VIGTIGT: Remap så Azimuth virker når telefonen holdes "opret" (kamera-mode)
+            // Uden dette vil Azimuth "glide" når du vipper telefonen.
+            SensorManager.remapCoordinateSystem(smoothedRotationMatrix,
+                    SensorManager.AXIS_X, SensorManager.AXIS_Z,
+                    outMatrix);
 
-        txtAngle.setText(getString(R.string.angle_format, azimuth, elevation));
+            SensorManager.getOrientation(outMatrix, orientationAngles);
 
-        if (azimuth != lastAzimuth) {
-            data.add(azimuth + " " + elevation);
-            lastAzimuth = azimuth;
+            float azimuthDegrees = (float) Math.toDegrees(orientationAngles[0]);
+            int azimuth = (int) (azimuthDegrees + 360 - calibration) % 360;
+
+            // Elevation (Lodret vinkel)
+            // Vi tager -pitch fordi vi vil have positive tal når vi kigger OP
+            int elevation = Math.round((float) -Math.toDegrees(orientationAngles[1]));
+
+            txtAngle.setText(getString(R.string.angle_format, azimuth, elevation));
+
+            if (azimuth != lastAzimuth) {
+                data.add(azimuth + " " + elevation);
+                lastAzimuth = azimuth;
+            }
         }
     }
 
@@ -226,7 +248,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         btnStop.setVisibility(View.VISIBLE);
 
         statusText.setText(R.string.status_scanning);
-        sensorManager.registerListener(this, rotationSensor, SensorManager.SENSOR_DELAY_UI);
+        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_UI);
+        sensorManager.registerListener(this, magnetometer, SensorManager.SENSOR_DELAY_UI);
     }
 
     private void stopScan() {
@@ -368,9 +391,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
     private void calibrate() {
-        float[] O = new float[3];
-        SensorManager.getOrientation(smoothedRotationMatrix, O);
-        calibration = (int) Math.toDegrees(O[0]);
+        updateOrientationAngles();
+        calibration = (int) ((Math.toDegrees(orientationAngles[0]) + 360) % 360);
         savePrefs();
         Toast.makeText(this, R.string.calibrated, Toast.LENGTH_SHORT).show();
     }
