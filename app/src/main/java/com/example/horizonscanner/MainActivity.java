@@ -34,6 +34,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private static final String PREF_MODE = "mode";
     private static final String PREF_FOLDER = "folder";
     private static final String PREF_CALIBRATION = "calibration";
+    private static final String PREF_SCREEN_ON = "screen_on";
     private static final int REQUEST_CODE_PERMISSIONS = 10;
     private static final String[] REQUIRED_PERMISSIONS = new String[]{Manifest.permission.CAMERA};
     private static final float SMOOTHING_FACTOR = 0.05f;
@@ -52,6 +53,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private Uri folderUri;
     private Uri lastSavedFileUri;
     private int calibration = 0;
+    private boolean keepScreenOn = false;
 
     private boolean recording = false;
     private int lastAzimuth = -1;
@@ -100,6 +102,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         loadPrefs();
         updateFolderText();
+        updateKeepScreenOn();
         showStartupDialog();
 
         if (allPermissionsGranted()) {
@@ -124,7 +127,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         if (item.getItemId() == R.id.menu_settings) {
-            showPointingModeDialog();
+            showSettingsDialog();
             return true;
         }
         if (item.getItemId() == R.id.menu_calibrate) {
@@ -156,19 +159,40 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 .show();
     }
 
-    private void showPointingModeDialog() {
+    private void showSettingsDialog() {
         String[] options = {
                 getString(R.string.point_phone),
-                getString(R.string.point_camera)
+                getString(R.string.point_camera),
+                getString(R.string.keep_screen_on)
+        };
+        boolean[] checkedItems = {
+                pointingMode == MODE_PHONE,
+                pointingMode == MODE_CAMERA,
+                keepScreenOn
         };
 
+        // We use a custom multi-choice approach or just radio for mode + checkbox for screen
+        // For simplicity, let's make a more advanced dialog:
+        
+        View dialogView = getLayoutInflater().inflate(R.layout.dialog_settings, null);
+        RadioGroup radioGroup = dialogView.findViewById(R.id.radioGroupMode);
+        CheckBox checkBoxScreen = dialogView.findViewById(R.id.checkBoxScreenOn);
+
+        if (pointingMode == MODE_PHONE) radioGroup.check(R.id.radioPhone);
+        else radioGroup.check(R.id.radioCamera);
+        
+        checkBoxScreen.setChecked(keepScreenOn);
+
         new AlertDialog.Builder(this)
-                .setTitle(R.string.pointing_mode)
-                .setSingleChoiceItems(options, pointingMode, (d, w) -> {
-                    pointingMode = w;
+                .setTitle(R.string.menu_settings)
+                .setView(dialogView)
+                .setPositiveButton(android.R.string.ok, (d, w) -> {
+                    pointingMode = (radioGroup.getCheckedRadioButtonId() == R.id.radioPhone) ? MODE_PHONE : MODE_CAMERA;
+                    keepScreenOn = checkBoxScreen.isChecked();
                     updateCameraVisibility();
+                    updateKeepScreenOn();
+                    savePrefs();
                 })
-                .setPositiveButton(android.R.string.ok, (d, w) -> savePrefs())
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
@@ -311,6 +335,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         SharedPreferences.Editor e = p.edit();
         e.putInt(PREF_MODE, pointingMode);
         e.putInt(PREF_CALIBRATION, calibration);
+        e.putBoolean(PREF_SCREEN_ON, keepScreenOn);
         if (folderUri != null) e.putString(PREF_FOLDER, folderUri.toString());
         e.apply();
     }
@@ -319,6 +344,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
         pointingMode = p.getInt(PREF_MODE, MODE_PHONE);
         calibration = p.getInt(PREF_CALIBRATION, 0);
+        keepScreenOn = p.getBoolean(PREF_SCREEN_ON, false);
         String u = p.getString(PREF_FOLDER, null);
         if (u != null) folderUri = Uri.parse(u);
         updateCameraVisibility();
@@ -328,6 +354,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         txtFolder.setText(folderUri == null
                 ? getString(R.string.no_folder)
                 : folderUri.toString());
+    }
+
+    private void updateKeepScreenOn() {
+        if (keepScreenOn) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
     }
 
     /* ---------- CAMERA ---------- */

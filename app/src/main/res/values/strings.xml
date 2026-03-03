@@ -20,4 +20,6 @@
     <string name="angle_format">Azimuth: %1$d°, Elevation: %2$d°</string>
     <string name="menu_calibrate">Kalibrer</string>
     <string name="calibrated">Kalibreret</string>
+
+    <string name="keep_screen_on">Hold skærm tændt</string>
 </resources>

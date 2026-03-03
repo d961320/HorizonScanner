@@ -56,12 +56,14 @@
         android:id="@+id/btnStart"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginBottom="40dp"
         android:text="@string/start"/>
 
     <Button
         android:id="@+id/btnStop"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginBottom="40dp"
         android:text="@string/stop"
         android:visibility="gone"/>
 </LinearLayout>
