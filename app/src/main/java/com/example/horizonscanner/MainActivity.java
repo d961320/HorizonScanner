@@ -40,7 +40,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private static final float SMOOTHING_FACTOR = 0.05f;
 
     private SensorManager sensorManager;
-    private Sensor rotationSensor, accelerometer, magnetometer;
+    private Sensor accelerometer, magnetometer;
 
     private TextView txtAngle, txtFolder, statusText;
     private Button btnStart, btnStop;
@@ -96,7 +96,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         crosshair = findViewById(R.id.crosshair);
 
         sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
-        rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
 
@@ -160,20 +159,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
     private void showSettingsDialog() {
-        String[] options = {
-                getString(R.string.point_phone),
-                getString(R.string.point_camera),
-                getString(R.string.keep_screen_on)
-        };
-        boolean[] checkedItems = {
-                pointingMode == MODE_PHONE,
-                pointingMode == MODE_CAMERA,
-                keepScreenOn
-        };
-
-        // We use a custom multi-choice approach or just radio for mode + checkbox for screen
-        // For simplicity, let's make a more advanced dialog:
-        
         View dialogView = getLayoutInflater().inflate(R.layout.dialog_settings, null);
         RadioGroup radioGroup = dialogView.findViewById(R.id.radioGroupMode);
         CheckBox checkBoxScreen = dialogView.findViewById(R.id.checkBoxScreenOn);
@@ -229,9 +214,24 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 smoothedRotationMatrix[i] = rotationMatrix[i] * SMOOTHING_FACTOR + smoothedRotationMatrix[i] * (1.0f - SMOOTHING_FACTOR);
             }
 
+            // Elevation beregnes ud fra den oprindelige matrix (robust overfor remapping)
+            float elevationDeg;
+            if (pointingMode == MODE_CAMERA) {
+                // I kamera-mode kigger vi "ud" gennem bagsiden (-Z).
+                // Vi bruger -R[8] da R[8] er Z-komponenten af enhedens Z-akse.
+                // Vi clamper værdien for at undgå NaN ved præcisionsfejl.
+                float value = Math.max(-1.0f, Math.min(1.0f, -smoothedRotationMatrix[8]));
+                elevationDeg = (float) Math.toDegrees(Math.asin(value));
+            } else {
+                // I telefon-mode peger vi med toppen (Y).
+                // R[7] er Z-komponenten af enhedens Y-akse.
+                float value = Math.max(-1.0f, Math.min(1.0f, smoothedRotationMatrix[7]));
+                elevationDeg = (float) Math.toDegrees(Math.asin(value));
+            }
+            int elevation = Math.round(elevationDeg);
+
+            // Azimuth beregnes med remapping for at håndtere "oprejst" position korrekt
             float[] outMatrix = new float[9];
-            // VIGTIGT: Remap så Azimuth virker når telefonen holdes "opret" (kamera-mode)
-            // Uden dette vil Azimuth "glide" når du vipper telefonen.
             SensorManager.remapCoordinateSystem(smoothedRotationMatrix,
                     SensorManager.AXIS_X, SensorManager.AXIS_Z,
                     outMatrix);
@@ -240,10 +240,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             float azimuthDegrees = (float) Math.toDegrees(orientationAngles[0]);
             int azimuth = (int) (azimuthDegrees + 360 - calibration) % 360;
-
-            // Elevation (Lodret vinkel)
-            // Vi tager -pitch fordi vi vil have positive tal når vi kigger OP
-            int elevation = Math.round((float) -Math.toDegrees(orientationAngles[1]));
 
             txtAngle.setText(getString(R.string.angle_format, azimuth, elevation));
 
@@ -426,7 +422,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     private void calibrate() {
         updateOrientationAngles();
-        calibration = (int) ((Math.toDegrees(orientationAngles[0]) + 360) % 360);
+        float[] outMatrix = new float[9];
+        SensorManager.remapCoordinateSystem(smoothedRotationMatrix,
+                SensorManager.AXIS_X, SensorManager.AXIS_Z,
+                outMatrix);
+        float[] angles = new float[3];
+        SensorManager.getOrientation(outMatrix, angles);
+        calibration = (int) ((Math.toDegrees(angles[0]) + 360) % 360);
         savePrefs();
         Toast.makeText(this, R.string.calibrated, Toast.LENGTH_SHORT).show();
     }
