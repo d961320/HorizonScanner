@@ -56,9 +56,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private boolean keepScreenOn = false;
 
     private boolean recording = false;
-    private int lastAzimuth = -1;
 
-    private final List<String> data = new ArrayList<>();
+    // Gemmer elevation for hver grad (0-359). Vi bruger Integer så vi kan have null for "ingen data".
+    private final Integer[] scannedData = new Integer[360];
     private final float[] smoothedRotationMatrix = new float[9];
 
     private float[] accelerometerReading = new float[3];
@@ -214,23 +214,16 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 smoothedRotationMatrix[i] = rotationMatrix[i] * SMOOTHING_FACTOR + smoothedRotationMatrix[i] * (1.0f - SMOOTHING_FACTOR);
             }
 
-            // Elevation beregnes ud fra den oprindelige matrix (robust overfor remapping)
             float elevationDeg;
             if (pointingMode == MODE_CAMERA) {
-                // I kamera-mode kigger vi "ud" gennem bagsiden (-Z).
-                // Vi bruger -R[8] da R[8] er Z-komponenten af enhedens Z-akse.
-                // Vi clamper værdien for at undgå NaN ved præcisionsfejl.
                 float value = Math.max(-1.0f, Math.min(1.0f, -smoothedRotationMatrix[8]));
                 elevationDeg = (float) Math.toDegrees(Math.asin(value));
             } else {
-                // I telefon-mode peger vi med toppen (Y).
-                // R[7] er Z-komponenten af enhedens Y-akse.
                 float value = Math.max(-1.0f, Math.min(1.0f, smoothedRotationMatrix[7]));
                 elevationDeg = (float) Math.toDegrees(Math.asin(value));
             }
             int elevation = Math.round(elevationDeg);
 
-            // Azimuth beregnes med remapping for at håndtere "oprejst" position korrekt
             float[] outMatrix = new float[9];
             SensorManager.remapCoordinateSystem(smoothedRotationMatrix,
                     SensorManager.AXIS_X, SensorManager.AXIS_Z,
@@ -243,9 +236,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             txtAngle.setText(getString(R.string.angle_format, azimuth, elevation));
 
-            if (azimuth != lastAzimuth) {
-                data.add(azimuth + " " + elevation);
-                lastAzimuth = azimuth;
+            if (recording) {
+                // Gemmer elevation for den aktuelle azimuth (overskriver tidligere måling for samme grad)
+                scannedData[azimuth] = elevation;
             }
         }
     }
@@ -260,9 +253,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             return;
         }
 
-        data.clear();
+        // Nulstil data-arrayet
+        Arrays.fill(scannedData, null);
         recording = true;
-        lastAzimuth = -1;
 
         btnStart.setVisibility(View.GONE);
         btnStop.setVisibility(View.VISIBLE);
@@ -297,8 +290,16 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             lastSavedFileUri = file.getUri();
 
             try (OutputStream os = getContentResolver().openOutputStream(file.getUri())) {
-                for (String line : data) {
-                    os.write((line + "\n").getBytes());
+                // Vi gennemgår azimuth fra 359 ned til 0 (bruger 360 som start-tekst hvis ønsket, 
+                // men internt er det 0-359).
+                for (int azimuth = 359; azimuth >= 0; azimuth--) {
+                    Integer elevation = scannedData[azimuth];
+                    if (elevation != null) {
+                        // Vi kan gemme 360 i stedet for 0 hvis vi vil følge instruktionen slavisk
+                        int displayAzimuth = (azimuth == 0) ? 360 : azimuth;
+                        String line = displayAzimuth + " " + elevation + "\n";
+                        os.write(line.getBytes());
+                    }
                 }
             }
 
